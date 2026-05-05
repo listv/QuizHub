@@ -1,0 +1,69 @@
+services:
+  # ── PostgreSQL ──
+  db:
+    image: postgres:16-alpine
+    container_name: quizhub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: quizhub
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d quizhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── API ──
+  api:
+    image: ghcr.io/${GITHUB_OWNER}/quizhub-api:prod-latest
+    container_name: quizhub-api
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    volumes:
+      - api-logs:/app/logs
+      - api-uploads:/app/uploads
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=quizhub;Username=postgres;Password=${DB_PASSWORD}"
+      Jwt__Key: "${JWT_KEY}"
+      Jwt__Issuer: "QuizHub"
+      Jwt__Audience: "QuizHub"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Client ──
+  client:
+    image: ghcr.io/${GITHUB_OWNER}/quizhub-client:prod-latest
+    container_name: quizhub-client
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    depends_on:
+      - api
+
+  # ── pgAdmin (optional) ──
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: quizhub-pgadmin
+    restart: unless-stopped
+    profiles:
+      - tools
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@quizhub.local
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+  api-logs:
+  api-uploads:

@@ -1,0 +1,54 @@
+services:
+  # ── PostgreSQL (staging) ──
+  db-staging:
+    image: postgres:16-alpine
+    container_name: quizhub-db-staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: quizhub_staging
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata-staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d quizhub_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── API (staging) ──
+  api-staging:
+    image: ghcr.io/${GITHUB_OWNER}/quizhub-api:staging-latest
+    container_name: quizhub-api-staging
+    restart: unless-stopped
+    ports:
+      - "5001:8080"
+    volumes:
+      - api-logs-staging:/app/logs
+      - api-uploads-staging:/app/uploads
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=db-staging;Port=5432;Database=quizhub_staging;Username=postgres;Password=${DB_PASSWORD}"
+      Jwt__Key: "${JWT_KEY}"
+      Jwt__Issuer: "QuizHub"
+      Jwt__Audience: "QuizHub"
+      ASPNETCORE_ENVIRONMENT: "Development"
+    depends_on:
+      db-staging:
+        condition: service_healthy
+
+  # ── Client (staging) ──
+  client-staging:
+    image: ghcr.io/${GITHUB_OWNER}/quizhub-client:staging-latest
+    container_name: quizhub-client-staging
+    restart: unless-stopped
+    ports:
+      - "4201:80"
+    depends_on:
+      - api-staging
+
+volumes:
+  pgdata-staging:
+  api-logs-staging:
+  api-uploads-staging:

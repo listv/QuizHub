@@ -1,0 +1,33 @@
+# Build
+bin/
+obj/
+client/dist/
+client/node_modules/
+client/.angular/
+
+# Environment (secrets — never commit)
+.env
+.env.staging
+.env.prod
+
+# Certificates
+proxy/certs/*.crt
+proxy/certs/*.key
+!proxy/certs/.gitkeep
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+
+# Backups
+backups/

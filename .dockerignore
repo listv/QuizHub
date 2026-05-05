@@ -1,0 +1,13 @@
+**/.git
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/node_modules
+**/.env
+**/Migrations
+*.md
+*.tar.gz
+docker-compose*.yml
+.dockerignore
+.gitignore

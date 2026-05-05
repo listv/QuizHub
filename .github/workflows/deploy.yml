@@ -1,0 +1,175 @@
+name: QuizHub CI/CD
+
+on:
+  push:
+    branches:
+      - main        # → production
+      - staging     # → staging
+  pull_request:
+    branches:
+      - main
+      - staging
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ghcr.io/${{ github.repository_owner }}/quizhub-api
+  IMAGE_CLIENT: ghcr.io/${{ github.repository_owner }}/quizhub-client
+
+jobs:
+  # ══════════════════════════════════════
+  # BUILD & PUSH DOCKER IMAGES
+  # ══════════════════════════════════════
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: |
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            echo "tag=prod-${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "env=production" >> $GITHUB_OUTPUT
+          else
+            echo "tag=staging-${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "env=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_API }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_API }}:${{ github.ref_name }}-latest
+
+      - name: Build & push Client image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          dockerfile: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_CLIENT }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_CLIENT }}:${{ github.ref_name }}-latest
+
+  # ══════════════════════════════════════
+  # DEPLOY TO STAGING
+  # ══════════════════════════════════════
+  deploy-staging:
+    name: Deploy → Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'staging'
+    environment: staging
+
+    steps:
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/quizhub/QuizHub
+
+            echo "📥 Pulling latest images..."
+            export CR_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            echo $CR_TOKEN | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            docker pull ${{ env.IMAGE_API }}:staging-latest
+            docker pull ${{ env.IMAGE_CLIENT }}:staging-latest
+
+            echo "🗄️ Running migrations..."
+            export PATH="$PATH:$HOME/.dotnet/tools"
+            DB_PASS=$(grep DB_PASSWORD .env.staging | cut -d= -f2)
+            docker compose -f docker-compose.staging.yml --env-file .env.staging run --rm api-staging \
+              dotnet ef database update --no-build || true
+
+            echo "🚀 Restarting staging..."
+            docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+
+            echo "✅ Staging deploy complete!"
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            sleep 15
+            curl -sf http://localhost:5001/health && echo "✅ Staging API healthy" || echo "❌ Staging API not ready"
+
+  # ══════════════════════════════════════
+  # DEPLOY TO PRODUCTION
+  # ══════════════════════════════════════
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'main'
+    environment: production
+
+    steps:
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/quizhub/QuizHub
+
+            echo "📥 Pulling latest images..."
+            export CR_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            echo $CR_TOKEN | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            docker pull ${{ env.IMAGE_API }}:prod-latest
+            docker pull ${{ env.IMAGE_CLIENT }}:prod-latest
+
+            echo "💾 Backup DB..."
+            DB_PASS=$(grep DB_PASSWORD .env | cut -d= -f2)
+            docker exec quizhub-db pg_dump -U postgres quizhub > /opt/quizhub/backups/quizhub_$(date +%Y%m%d_%H%M%S).sql
+
+            echo "🗄️ Running migrations..."
+            docker compose run --rm api \
+              dotnet ef database update --no-build || true
+
+            echo "🚀 Restarting production..."
+            docker compose up -d
+
+            echo "✅ Production deploy complete!"
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            sleep 15
+            curl -sf http://localhost:5000/health && echo "✅ Production API healthy" || echo "❌ Production API not ready"
+            mkdir -p /opt/quizhub/backups

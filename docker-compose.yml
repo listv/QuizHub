@@ -1,0 +1,131 @@
+services:
+  # ── PostgreSQL ──
+  db:
+    image: postgres:16-alpine
+    container_name: quizhub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: quizhub
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d quizhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── QuizHub API ──
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quizhub-api
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    volumes:
+      - api-logs:/app/logs
+      - api-uploads:/app/uploads
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=quizhub;Username=postgres;Password=${DB_PASSWORD:-postgres}"
+      Jwt__Key: "${JWT_KEY:-QuizHub-Super-Secret-Key-Must-Be-At-Least-32-Characters-Long!}"
+      Jwt__Issuer: "QuizHub"
+      Jwt__Audience: "QuizHub"
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Production}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Angular Frontend ──
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: quizhub-client
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    depends_on:
+      - api
+
+  # ══════════════════════════════════════════════════
+  # HTTPS Reverse Proxy (Development — self-signed)
+  # Usage: docker compose --profile ssl up -d
+  # ══════════════════════════════════════════════════
+  proxy-dev:
+    image: nginx:alpine
+    container_name: quizhub-proxy
+    restart: unless-stopped
+    profiles:
+      - ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./proxy/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./proxy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - client
+
+  # ══════════════════════════════════════════════════
+  # HTTPS Reverse Proxy (Production — Let's Encrypt)
+  # Usage: docker compose --profile prod up -d
+  # ══════════════════════════════════════════════════
+  proxy-prod:
+    image: nginx:alpine
+    container_name: quizhub-proxy
+    restart: unless-stopped
+    profiles:
+      - prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./proxy/nginx.prod.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    depends_on:
+      - api
+      - client
+
+  # ── Certbot (auto-renew Let's Encrypt) ──
+  certbot:
+    image: certbot/certbot
+    container_name: quizhub-certbot
+    restart: unless-stopped
+    profiles:
+      - prod
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-certs:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  # ── pgAdmin (optional) ──
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: quizhub-pgadmin
+    restart: unless-stopped
+    profiles:
+      - tools
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@quizhub.local
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - "5050:5050"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+  api-logs:
+  api-uploads:
+  certbot-www:
+  certbot-certs:
