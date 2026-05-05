@@ -3,17 +3,11 @@ name: QuizHub CI/CD
 on:
   push:
     branches:
-      - main        # → production
-      - staging     # → staging
-  pull_request:
-    branches:
       - main
       - staging
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_API: ghcr.io/${{ github.repository_owner }}/quizhub-api
-  IMAGE_CLIENT: ghcr.io/${{ github.repository_owner }}/quizhub-client
 
 jobs:
   # ══════════════════════════════════════
@@ -22,14 +16,10 @@ jobs:
   build:
     name: Build & Push Images
     runs-on: self-hosted
-    if: github.event_name == 'push'
 
     permissions:
       contents: read
       packages: write
-
-    outputs:
-      tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -40,10 +30,8 @@ jobs:
         run: |
           if [ "${{ github.ref_name }}" == "main" ]; then
             echo "tag=prod-${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=production" >> $GITHUB_OUTPUT
           else
             echo "tag=staging-${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=staging" >> $GITHUB_OUTPUT
           fi
 
       - name: Log in to GitHub Container Registry
@@ -53,89 +41,89 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push API image
+      - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
           context: .
           dockerfile: Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_API }}:${{ steps.meta.outputs.tag }}
-            ${{ env.IMAGE_API }}:${{ github.ref_name }}-latest
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/quizhub-api:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/quizhub-api:${{ github.ref_name }}-latest
 
-      - name: Build & push Client image
+      - name: Build and push Client image
         uses: docker/build-push-action@v5
         with:
           context: ./client
           dockerfile: Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_CLIENT }}:${{ steps.meta.outputs.tag }}
-            ${{ env.IMAGE_CLIENT }}:${{ github.ref_name }}-latest
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/quizhub-client:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/quizhub-client:${{ github.ref_name }}-latest
 
   # ══════════════════════════════════════
   # DEPLOY TO STAGING
   # ══════════════════════════════════════
   deploy-staging:
-  name: Deploy → Staging
-  runs-on: self-hosted
-  needs: build
-  if: github.ref_name == 'staging'
-  environment: staging
+    name: Deploy to Staging
+    runs-on: self-hosted
+    needs: build
+    if: github.ref_name == 'staging'
+    environment: staging
 
-  steps:
-    - name: Deploy
-      run: |
-        set -e
-        cd /opt/quizhub/QuizHub
+    steps:
+      - name: Deploy
+        run: |
+          set -e
+          cd /opt/quizhub/QuizHub
 
-        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env.staging
-        echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env.staging
-        echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env.staging
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env.staging
+          echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env.staging
+          echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env.staging
 
-        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:staging-latest
-        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:staging-latest
+          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:staging-latest
+          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:staging-latest
 
-        export PATH="$PATH:$HOME/.dotnet/tools"
-        docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
 
-    - name: Health check
-      run: |
-        sleep 15
-        curl -sf http://localhost:5001/health && echo "✅ Staging healthy" || echo "❌ Not ready"
+      - name: Health check
+        run: |
+          sleep 15
+          curl -sf http://localhost:5001/health && echo "Staging healthy" || echo "Not ready"
 
   # ══════════════════════════════════════
   # DEPLOY TO PRODUCTION
   # ══════════════════════════════════════
   deploy-production:
-  name: Deploy → Production
-  runs-on: self-hosted
-  needs: build
-  if: github.ref_name == 'main'
-  environment: production
+    name: Deploy to Production
+    runs-on: self-hosted
+    needs: build
+    if: github.ref_name == 'main'
+    environment: production
 
-  steps:
-    - name: Backup DB
-      run: |
-        mkdir -p /opt/quizhub/backups
-        docker exec quizhub-db pg_dump -U postgres quizhub > /opt/quizhub/backups/quizhub_$(date +%Y%m%d_%H%M%S).sql
+    steps:
+      - name: Backup DB
+        run: |
+          mkdir -p /opt/quizhub/backups
+          docker exec quizhub-db pg_dump -U postgres quizhub > /opt/quizhub/backups/quizhub_$(date +%Y%m%d_%H%M%S).sql
 
-    - name: Deploy
-      run: |
-        set -e
-        cd /opt/quizhub/QuizHub
+      - name: Deploy
+        run: |
+          set -e
+          cd /opt/quizhub/QuizHub
 
-        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
-        echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env
-        echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
+          echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env
+          echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env
 
-        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:prod-latest
-        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:prod-latest
+          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:prod-latest
+          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:prod-latest
 
-        export PATH="$PATH:$HOME/.dotnet/tools"
-        docker compose -f docker-compose.prod.yml --env-file .env up -d
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          docker compose -f docker-compose.prod.yml --env-file .env up -d
 
-    - name: Health check
-      run: |
-        sleep 15
-        curl -sf http://localhost:5000/health && echo "✅ Production healthy" || echo "❌ Not ready"
+      - name: Health check
+        run: |
+          sleep 15
+          curl -sf http://localhost:5000/health && echo "Production healthy" || echo "Not ready"
