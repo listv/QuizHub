@@ -20,7 +20,7 @@ services:
 
   # ── API (staging) ──
   api-staging:
-    image: ghcr.io/${GITHUB_OWNER}/quizhub-api:staging-latest
+    image: ghcr.io/${APP_GITHUB_OWNER}/quizhub-api:staging-latest
     container_name: quizhub-api-staging
     restart: unless-stopped
     ports:
@@ -40,7 +40,7 @@ services:
 
   # ── Client (staging) ──
   client-staging:
-    image: ghcr.io/${GITHUB_OWNER}/quizhub-client:staging-latest
+    image: ghcr.io/${APP_GITHUB_OWNER}/quizhub-client:staging-latest
     container_name: quizhub-client-staging
     restart: unless-stopped
     ports:
