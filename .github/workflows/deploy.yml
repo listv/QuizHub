@@ -21,7 +21,7 @@ jobs:
   # ══════════════════════════════════════
   build:
     name: Build & Push Images
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.event_name == 'push'
 
     permissions:
@@ -77,105 +77,65 @@ jobs:
   # DEPLOY TO STAGING
   # ══════════════════════════════════════
   deploy-staging:
-    name: Deploy → Staging
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref_name == 'staging'
-    environment: staging
+  name: Deploy → Staging
+  runs-on: self-hosted
+  needs: build
+  if: github.ref_name == 'staging'
+  environment: staging
 
-    steps:
-      - name: Deploy to VM
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/quizhub/QuizHub
-            echo "DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}" > .env.staging
-            echo "JWT_KEY=${{ secrets.STAGING_JWT_KEY }}" >> .env.staging
-            echo "GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env.staging
+  steps:
+    - name: Deploy
+      run: |
+        set -e
+        cd /opt/quizhub/QuizHub
 
-            echo "📥 Pulling latest images..."
-            export CR_TOKEN=${{ secrets.GITHUB_TOKEN }}
-            echo $CR_TOKEN | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env.staging
+        echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env.staging
+        echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env.staging
 
-            docker pull ${{ env.IMAGE_API }}:staging-latest
-            docker pull ${{ env.IMAGE_CLIENT }}:staging-latest
+        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:staging-latest
+        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:staging-latest
 
-            echo "🗄️ Running migrations..."
-            export PATH="$PATH:$HOME/.dotnet/tools"
-            DB_PASS=$(grep DB_PASSWORD .env.staging | cut -d= -f2)
-            docker compose -f docker-compose.staging.yml --env-file .env.staging run --rm api-staging \
-              dotnet ef database update --no-build || true
+        export PATH="$PATH:$HOME/.dotnet/tools"
+        docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
 
-            echo "🚀 Restarting staging..."
-            docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
-
-            echo "✅ Staging deploy complete!"
-
-      - name: Health check
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            sleep 15
-            curl -sf http://localhost:5001/health && echo "✅ Staging API healthy" || echo "❌ Staging API not ready"
+    - name: Health check
+      run: |
+        sleep 15
+        curl -sf http://localhost:5001/health && echo "✅ Staging healthy" || echo "❌ Not ready"
 
   # ══════════════════════════════════════
   # DEPLOY TO PRODUCTION
   # ══════════════════════════════════════
   deploy-production:
-    name: Deploy → Production
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref_name == 'main'
-    environment: production
+  name: Deploy → Production
+  runs-on: self-hosted
+  needs: build
+  if: github.ref_name == 'main'
+  environment: production
 
-    steps:
-      - name: Deploy to VM
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/quizhub/QuizHub
-            echo "DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }}" > .env
-            echo "JWT_KEY=${{ secrets.PROD_JWT_KEY }}" >> .env
-            echo "GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env
+  steps:
+    - name: Backup DB
+      run: |
+        mkdir -p /opt/quizhub/backups
+        docker exec quizhub-db pg_dump -U postgres quizhub > /opt/quizhub/backups/quizhub_$(date +%Y%m%d_%H%M%S).sql
 
-            echo "📥 Pulling latest images..."
-            export CR_TOKEN=${{ secrets.GITHUB_TOKEN }}
-            echo $CR_TOKEN | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+    - name: Deploy
+      run: |
+        set -e
+        cd /opt/quizhub/QuizHub
 
-            docker pull ${{ env.IMAGE_API }}:prod-latest
-            docker pull ${{ env.IMAGE_CLIENT }}:prod-latest
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
+        echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env
+        echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env
 
-            echo "💾 Backup DB..."
-            DB_PASS=$(grep DB_PASSWORD .env | cut -d= -f2)
-            docker exec quizhub-db pg_dump -U postgres quizhub > /opt/quizhub/backups/quizhub_$(date +%Y%m%d_%H%M%S).sql
+        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:prod-latest
+        docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:prod-latest
 
-            echo "🗄️ Running migrations..."
-            docker compose run --rm api \
-              dotnet ef database update --no-build || true
+        export PATH="$PATH:$HOME/.dotnet/tools"
+        docker compose -f docker-compose.prod.yml --env-file .env up -d
 
-            echo "🚀 Restarting production..."
-            docker compose up -d
-
-            echo "✅ Production deploy complete!"
-
-      - name: Health check
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            sleep 15
-            curl -sf http://localhost:5000/health && echo "✅ Production API healthy" || echo "❌ Production API not ready"
-            mkdir -p /opt/quizhub/backups
+    - name: Health check
+      run: |
+        sleep 15
+        curl -sf http://localhost:5000/health && echo "✅ Production healthy" || echo "❌ Not ready"
