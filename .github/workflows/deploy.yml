@@ -93,6 +93,9 @@ jobs:
           script: |
             set -e
             cd /opt/quizhub/QuizHub
+            echo "DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}" > .env.staging
+            echo "JWT_KEY=${{ secrets.STAGING_JWT_KEY }}" >> .env.staging
+            echo "GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env.staging
 
             echo "📥 Pulling latest images..."
             export CR_TOKEN=${{ secrets.GITHUB_TOKEN }}
@@ -142,6 +145,9 @@ jobs:
           script: |
             set -e
             cd /opt/quizhub/QuizHub
+            echo "DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }}" > .env
+            echo "JWT_KEY=${{ secrets.PROD_JWT_KEY }}" >> .env
+            echo "GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env
 
             echo "📥 Pulling latest images..."
             export CR_TOKEN=${{ secrets.GITHUB_TOKEN }}
