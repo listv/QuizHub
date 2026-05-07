@@ -98,8 +98,21 @@ public class QuestionService
             }
         }
 
-        question.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
+        await _db.Database.ExecuteSqlRawAsync(
+            @"UPDATE ""Questions"" SET 
+        ""Text"" = {0},
+        ""Category"" = {1},
+        ""Explanation"" = {2},
+        ""Type"" = {3},
+        ""UpdatedAt"" = {4}
+      WHERE ""Id"" = {5}",
+    question.Text,
+    question.Category,
+    question.Explanation ?? (object)DBNull.Value,
+    question.Type.ToString(),
+    DateTime.UtcNow,
+    question.Id);
+
         return MapQuestion(question);
     }
 
