@@ -14,7 +14,7 @@
 
 | Гілка | Середовище | Порти |
 |-------|-----------|-------|
-| `staging` | Staging | UI: 5200, API: 5001, DB: 5433 |
+| `staging` | Staging | UI: 4201, API: 5001, DB: 5433 |
 | `main` | Production | UI: 4200, API: 5000, DB: 5432 |
 
 Будь-який `push` в `staging` → автоматичний деплой на staging.
