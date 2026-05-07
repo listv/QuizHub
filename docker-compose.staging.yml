@@ -44,7 +44,7 @@ services:
     container_name: quizhub-client-staging
     restart: unless-stopped
     ports:
-      - "5200:80"
+      - "5200:5200"
     depends_on:
       - api-staging
 
