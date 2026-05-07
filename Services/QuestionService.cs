@@ -94,12 +94,19 @@ public class QuestionService
                 question.Options.Clear();
 
                 for (int i = 0; i < req.Options.Count; i++)
-                    question.Options.Add(new QuestionOption { Text = req.Options[i].Text, IsCorrect = req.Options[i].IsCorrect, SortOrder = i });
+                    question.Options.Add(new QuestionOption
+                    {
+                        Text = req.Options[i].Text,
+                        IsCorrect = req.Options[i].IsCorrect,
+                        SortOrder = i
+                    });
+
+                await _db.SaveChangesAsync();
             }
         }
 
         await _db.Database.ExecuteSqlRawAsync(
-            @"UPDATE ""Questions"" SET 
+    @"UPDATE ""Questions"" SET 
         ""Text"" = {0},
         ""Category"" = {1},
         ""Explanation"" = {2},
@@ -113,7 +120,12 @@ public class QuestionService
     DateTime.UtcNow,
     question.Id);
 
-        return MapQuestion(question);
+        // Перезавантажити з БД щоб отримати актуальні дані
+        var updated = await _db.Questions
+            .Include(q => q.Options)
+            .FirstOrDefaultAsync(q => q.Id == id);
+
+        return MapQuestion(updated!);
     }
 
     public async Task<bool> DeleteAsync(Guid id)
