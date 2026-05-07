@@ -73,6 +73,10 @@ public class QuestionService
         {
             await _db.Database.ExecuteSqlRawAsync(
                 "DELETE FROM \"QuestionOptions\" WHERE \"QuestionId\" = {0}", question.Id);
+
+            foreach (var opt in question.Options)
+                _db.Entry(opt).State = EntityState.Detached;
+
             question.Options.Clear();
 
             for (int i = 0; i < req.Options.Count; i++)
