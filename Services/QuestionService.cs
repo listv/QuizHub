@@ -71,16 +71,31 @@ public class QuestionService
 
         if (req.Options != null)
         {
-            await _db.Database.ExecuteSqlRawAsync(
-                "DELETE FROM \"QuestionOptions\" WHERE \"QuestionId\" = {0}", question.Id);
+            var currentOptions = question.Options
+                .OrderBy(o => o.SortOrder)
+                .Select(o => new { o.Text, o.IsCorrect })
+                .ToList();
+            var newOptions = req.Options
+                .Select(o => new { o.Text, o.IsCorrect })
+                .ToList();
 
-            foreach (var opt in question.Options)
-                _db.Entry(opt).State = EntityState.Detached;
+            bool optionsChanged = currentOptions.Count != newOptions.Count ||
+                currentOptions.Zip(newOptions)
+                    .Any(pair => pair.First.Text != pair.Second.Text ||
+                                 pair.First.IsCorrect != pair.Second.IsCorrect);
+            if (optionsChanged)
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM \"QuestionOptions\" WHERE \"QuestionId\" = {0}", question.Id);
 
-            question.Options.Clear();
+                foreach (var opt in question.Options)
+                    _db.Entry(opt).State = EntityState.Detached;
 
-            for (int i = 0; i < req.Options.Count; i++)
-                question.Options.Add(new QuestionOption { Text = req.Options[i].Text, IsCorrect = req.Options[i].IsCorrect, SortOrder = i });
+                question.Options.Clear();
+
+                for (int i = 0; i < req.Options.Count; i++)
+                    question.Options.Add(new QuestionOption { Text = req.Options[i].Text, IsCorrect = req.Options[i].IsCorrect, SortOrder = i });
+            }
         }
 
         question.UpdatedAt = DateTime.UtcNow;
