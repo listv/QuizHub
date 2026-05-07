@@ -87,3 +87,23 @@ public class SubmitTestRequestValidator : AbstractValidator<SubmitTestRequest>
         RuleFor(x => x.Answers).NotNull();
     }
 }
+
+public class UpdateQuestionRequestValidator : AbstractValidator<UpdateQuestionRequest>
+{
+    public UpdateQuestionRequestValidator()
+    {
+        When(x => x.Options != null && x.Type == "Single", () =>
+        {
+            RuleFor(x => x.Options)
+                .Must(o => o != null && o.Count(opt => opt.IsCorrect) == 1)
+                .WithMessage("Потрібно рівно 1 правильна відповідь для типу Single");
+        });
+
+        When(x => x.Options != null && x.Type == "Multi", () =>
+        {
+            RuleFor(x => x.Options)
+                .Must(o => o != null && o.Any(opt => opt.IsCorrect))
+                .WithMessage("Потрібно хоча б 1 правильна відповідь для типу Multi");
+        });
+    }
+}
