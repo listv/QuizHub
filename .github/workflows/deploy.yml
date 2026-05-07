@@ -72,6 +72,15 @@ jobs:
     environment: staging
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy config files
+        run: |
+          cp docker-compose.staging.yml /opt/quizhub/QuizHub/
+          mkdir -p /opt/quizhub/QuizHub/client
+          cp client/nginx.staging.conf /opt/quizhub/QuizHub/client/
+
       - name: Deploy
         run: |
           set -e
@@ -103,6 +112,13 @@ jobs:
     environment: production
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy config files
+        run: |
+          cp docker-compose.prod.yml /opt/quizhub/QuizHub/
+
       - name: Backup DB
         run: |
           mkdir -p /opt/quizhub/backups
