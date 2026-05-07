@@ -60,7 +60,12 @@ public class QuestionService
 
     public async Task<QuestionDto?> UpdateAsync(Guid id, UpdateQuestionRequest req)
     {
-        var question = await _db.Questions.Include(q => q.Options).FirstOrDefaultAsync(q => q.Id == id);
+        // AsNoTracking — EF не відстежує цей об'єкт
+        var question = await _db.Questions
+            .AsNoTracking()
+            .Include(q => q.Options)
+            .FirstOrDefaultAsync(q => q.Id == id);
+
         if (question == null) return null;
 
         if (req.Text != null) question.Text = req.Text;
@@ -69,59 +74,57 @@ public class QuestionService
         if (req.Type != null && Enum.TryParse<QuestionType>(req.Type, true, out var type))
             question.Type = type;
 
+        // Оновити питання через raw SQL
+        await _db.Database.ExecuteSqlRawAsync(
+            @"UPDATE ""Questions"" SET
+            ""Text"" = {0},
+            ""Category"" = {1},
+            ""Explanation"" = {2},
+            ""Type"" = {3},
+            ""UpdatedAt"" = {4}
+          WHERE ""Id"" = {5}",
+            question.Text,
+            question.Category,
+            question.Explanation ?? (object)DBNull.Value,
+            question.Type.ToString(),
+            DateTime.UtcNow,
+            question.Id);
+
+        // Оновити опції якщо змінились
         if (req.Options != null)
         {
             var currentOptions = question.Options
                 .OrderBy(o => o.SortOrder)
-                .Select(o => new { o.Text, o.IsCorrect })
-                .ToList();
+                .Select(o => new { o.Text, o.IsCorrect }).ToList();
             var newOptions = req.Options
-                .Select(o => new { o.Text, o.IsCorrect })
-                .ToList();
+                .Select(o => new { o.Text, o.IsCorrect }).ToList();
 
             bool optionsChanged = currentOptions.Count != newOptions.Count ||
                 currentOptions.Zip(newOptions)
-                    .Any(pair => pair.First.Text != pair.Second.Text ||
-                                 pair.First.IsCorrect != pair.Second.IsCorrect);
+                    .Any(p => p.First.Text != p.Second.Text ||
+                              p.First.IsCorrect != p.Second.IsCorrect);
+
             if (optionsChanged)
             {
+                // Видалити старі опції
                 await _db.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM \"QuestionOptions\" WHERE \"QuestionId\" = {0}", question.Id);
+                    "DELETE FROM \"QuestionOptions\" WHERE \"QuestionId\" = {0}", id);
 
-                foreach (var opt in question.Options)
-                    _db.Entry(opt).State = EntityState.Detached;
-
-                question.Options.Clear();
-
+                // Додати нові опції через raw SQL
                 for (int i = 0; i < req.Options.Count; i++)
-                    question.Options.Add(new QuestionOption
-                    {
-                        Text = req.Options[i].Text,
-                        IsCorrect = req.Options[i].IsCorrect,
-                        SortOrder = i
-                    });
-
-                await _db.SaveChangesAsync();
+                {
+                    var optId = Guid.NewGuid();
+                    await _db.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO ""QuestionOptions"" (""Id"", ""QuestionId"", ""Text"", ""IsCorrect"", ""SortOrder"")
+                      VALUES ({0}, {1}, {2}, {3}, {4})",
+                        optId, id, req.Options[i].Text, req.Options[i].IsCorrect, i);
+                }
             }
         }
 
-        await _db.Database.ExecuteSqlRawAsync(
-    @"UPDATE ""Questions"" SET 
-        ""Text"" = {0},
-        ""Category"" = {1},
-        ""Explanation"" = {2},
-        ""Type"" = {3},
-        ""UpdatedAt"" = {4}
-      WHERE ""Id"" = {5}",
-    question.Text,
-    question.Category,
-    question.Explanation ?? (object)DBNull.Value,
-    question.Type.ToString(),
-    DateTime.UtcNow,
-    question.Id);
-
-        // Перезавантажити з БД щоб отримати актуальні дані
+        // Повернути актуальні дані з БД
         var updated = await _db.Questions
+            .AsNoTracking()
             .Include(q => q.Options)
             .FirstOrDefaultAsync(q => q.Id == id);
 
