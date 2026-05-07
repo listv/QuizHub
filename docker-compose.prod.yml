@@ -20,7 +20,7 @@ services:
 
   # ── API ──
   api:
-    image: ghcr.io/${APP_GITHUB_OWNER}/quizhub-api:prod-latest
+    image: ghcr.io/${APP_GITHUB_OWNER}/quizhub-api:main-latest
     container_name: quizhub-api
     restart: unless-stopped
     ports:
@@ -40,7 +40,7 @@ services:
 
   # ── Client ──
   client:
-    image: ghcr.io/${APP_GITHUB_OWNER}/quizhub-client:prod-latest
+    image: ghcr.io/${APP_GITHUB_OWNER}/quizhub-client:main-latest
     container_name: quizhub-client
     restart: unless-stopped
     ports:

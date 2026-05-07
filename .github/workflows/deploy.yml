@@ -117,8 +117,8 @@ jobs:
           echo "JWT_KEY=${{ secrets.JWT_KEY }}" >> .env
           echo "APP_GITHUB_OWNER=${{ secrets.APP_GITHUB_OWNER }}" >> .env
 
-          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:prod-latest
-          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:prod-latest
+          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-api:main-latest
+          docker pull ghcr.io/${{ secrets.APP_GITHUB_OWNER }}/quizhub-client:main-latest
 
           export PATH="$PATH:$HOME/.dotnet/tools"
           docker compose -f docker-compose.prod.yml --env-file .env up -d
