@@ -11,18 +11,16 @@ import { NotificationService } from '@core/services/notification.service';
   imports: [CommonModule, FormsModule],
   template: `
     <div class="page-header">
-      <h1 class="page-title">Користувачі</h1>
-      <button class="btn-primary" (click)="startNew()">➕ Додати</button>
-    </div>
-
-    <!-- Toggle deactivated -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#64748b">
-        <input type="checkbox" [checked]="showDeactivated()" (change)="showDeactivated.set(!showDeactivated())">
-        Показувати деактивованих
-      </label>
-      <span style="font-size:12px;color:#94a3b8">({{ deactivatedCount() }} деактивовано)</span>
-    </div>
+  <h1 class="page-title">Користувачі</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#64748b">
+      <input type="checkbox" [checked]="showDeactivated()" (change)="showDeactivated.set(!showDeactivated())">
+      Показувати деактивованих
+      <span style="font-size:12px;color:#94a3b8">({{ deactivatedCount() }})</span>
+    </label>
+    <button class="btn-primary" (click)="startNew()">➕ Додати</button>
+  </div>
+</div>
 
     <!-- Grouped by department -->
     @for (group of groupedUsers(); track group[0]) {
