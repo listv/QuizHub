@@ -92,7 +92,8 @@ public class TestsController : ControllerBase
 
         var questions = test.TestQuestions.OrderBy(tq => tq.SortOrder).Select(tq => new
         {
-            tq.Question.Id, tq.Question.Text,
+            tq.Question.Id,
+            tq.Question.Text,
             Type = tq.Question.Type.ToString(),
             tq.Question.ImageUrl,
             Options = tq.Question.Type != QuestionType.Open
@@ -103,8 +104,15 @@ public class TestsController : ControllerBase
         if (test.RandomizeQuestions)
         {
             var rng = new Random();
-            return Ok(new { test.Id, test.Title, test.Description, test.TimeLimitMinutes, test.PassingScore,
-                Questions = questions.OrderBy(_ => rng.Next()).ToList() });
+            return Ok(new
+            {
+                test.Id,
+                test.Title,
+                test.Description,
+                test.TimeLimitMinutes,
+                test.PassingScore,
+                Questions = questions.OrderBy(_ => rng.Next()).ToList()
+            });
         }
         return Ok(new { test.Id, test.Title, test.Description, test.TimeLimitMinutes, test.PassingScore, Questions = questions });
     }
@@ -115,10 +123,13 @@ public class TestsController : ControllerBase
     {
         var test = new Test
         {
-            Title = req.Title, Description = req.Description,
-            TimeLimitMinutes = req.TimeLimitMinutes, PassingScore = req.PassingScore,
+            Title = req.Title,
+            Description = req.Description,
+            TimeLimitMinutes = req.TimeLimitMinutes,
+            PassingScore = req.PassingScore,
             RandomizeQuestions = req.RandomizeQuestions,
-            MaxAttempts = req.MaxAttempts, Deadline = req.Deadline
+            MaxAttempts = req.MaxAttempts,
+            Deadline = req.Deadline
         };
         for (int i = 0; i < req.QuestionIds.Count; i++)
             test.TestQuestions.Add(new TestQuestion { QuestionId = req.QuestionIds[i], SortOrder = i });
@@ -167,6 +178,49 @@ public class TestsController : ControllerBase
         test.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>Відновити деактивований тест.</summary>
+    [HttpPost("{id:guid}/restore")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Restore(Guid id)
+    {
+        var test = await _db.Tests.FindAsync(id);
+        if (test == null) return NotFound();
+        test.IsActive = true;
+        test.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(new { test.Id, test.Title });
+    }
+
+    /// <summary>Створити дублікат тесту без результатів.</summary>
+    [HttpPost("{id:guid}/duplicate")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Duplicate(Guid id)
+    {
+        var source = await _db.Tests
+            .Include(t => t.TestQuestions)
+            .FirstOrDefaultAsync(t => t.Id == id);
+        if (source == null) return NotFound();
+
+        var copy = new Test
+        {
+            Title = $"{source.Title} (копія)",
+            Description = source.Description,
+            TimeLimitMinutes = source.TimeLimitMinutes,
+            PassingScore = source.PassingScore,
+            RandomizeQuestions = source.RandomizeQuestions,
+            MaxAttempts = source.MaxAttempts,
+            Deadline = null, // скидаємо дедлайн
+            IsActive = true
+        };
+
+        foreach (var tq in source.TestQuestions.OrderBy(q => q.SortOrder))
+            copy.TestQuestions.Add(new TestQuestion { QuestionId = tq.QuestionId, SortOrder = tq.SortOrder });
+
+        _db.Tests.Add(copy);
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetById), new { id = copy.Id }, new { copy.Id, copy.Title });
     }
 
     /// <summary>
